@@ -159,6 +159,12 @@ with st.spinner("Simulating a year of general practice..."):
 # ---------------------------------------------------------------------------
 # header
 # ---------------------------------------------------------------------------
+# Back-to-portfolio link — only shown when opened from the projects portfolio
+# (which appends ?nav=1). Direct visitors don't see it, so the app stays
+# standalone if its URL is shared on its own.
+if st.query_params.get("nav") == "1":
+    st.link_button("← All projects", "https://things-we-have-built.netlify.app/")
+
 st.title("Synthetic GP Surgery Simulator")
 st.warning("**All data is synthetic.** Every patient is invented; figures are typical "
            "published NHS/ONS-style anchors. This is an illustrative sandbox — **not** a "
