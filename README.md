@@ -30,8 +30,16 @@ Then move the sidebar sliders and watch the KPIs and charts update.
 > above rather than a bare `streamlit run`. `pip` installs the Streamlit
 > launcher into a per-user scripts directory (e.g. `~/Library/Python/3.x/bin`
 > on macOS) that is often not on your `PATH`; invoking it via `python -m`
-> sidesteps that entirely. (Use `python3`/`pip3` if `python` points at
-> Python 2 on your machine, and Python 3.10+ is recommended.)
+> sidesteps that entirely.
+>
+> **On a Mac, `python` / `pip` may not exist** (`zsh: command not found:
+> python`) — modern macOS ships only `python3`. Use `python3` and `pip3`
+> everywhere below (Python 3.10+ recommended):
+>
+> ```bash
+> python3 -m pip install -r requirements.txt
+> python3 -m streamlit run app.py
+> ```
 
 ## Status — complete
 
