@@ -9,6 +9,9 @@ The central thing it makes visible is the **continuity-versus-responsiveness
 tension**: a practice can optimise for *speed of access* OR for patients seeing
 *their own clinician*, and this model lets you see and tune that trade-off.
 
+**▶ Live demo: <https://gp-surgery-simulator.streamlit.app/>** — open it in a
+browser, no install needed. (To run it locally instead, see *Quick start* below.)
+
 > ## ⚠️ All data is synthetic
 > Every patient in this model is invented. No real patient data and no real
 > practice records are used. The figures are typical published NHS/ONS-style
