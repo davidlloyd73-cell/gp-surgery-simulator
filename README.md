@@ -20,11 +20,26 @@ tension**: a practice can optimise for *speed of access* OR for patients seeing
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
-streamlit run app.py          # <- the interactive dashboard (one command)
+python -m pip install -r requirements.txt
+python -m streamlit run app.py     # <- the interactive dashboard (one command)
 ```
 
 Then move the sidebar sliders and watch the KPIs and charts update.
+
+> **`streamlit: command not found`?** Use the `python -m streamlit ...` form
+> above rather than a bare `streamlit run`. `pip` installs the Streamlit
+> launcher into a per-user scripts directory (e.g. `~/Library/Python/3.x/bin`
+> on macOS) that is often not on your `PATH`; invoking it via `python -m`
+> sidesteps that entirely.
+>
+> **On a Mac, `python` / `pip` may not exist** (`zsh: command not found:
+> python`) — modern macOS ships only `python3`. Use `python3` and `pip3`
+> everywhere below (Python 3.10+ recommended):
+>
+> ```bash
+> python3 -m pip install -r requirements.txt
+> python3 -m streamlit run app.py
+> ```
 
 ## Status — complete
 
@@ -47,7 +62,7 @@ python scripts/show_practice.py         # Phase 3: appointment-book profile
 python scripts/show_levers.py           # Phase 4: triage / AI / continuity levers
 python scripts/show_metrics.py          # Phase 5: grouped metrics + frontier
 python scripts/show_scenarios.py        # Phase 6: stress scenarios before/after
-pytest -q                               # 41 tests across all phases
+python -m pytest -q                     # 41 tests across all phases
 ```
 
 ## What Phase 1 produces
