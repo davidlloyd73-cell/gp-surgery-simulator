@@ -1,0 +1,10 @@
+# Synthetic GP Surgery Simulator -- Python dependencies
+# Install with:  pip install -r requirements.txt
+numpy>=1.26
+pandas>=2.0
+PyYAML>=6.0
+simpy>=4.0          # discrete-event engine for the appointment book (Phase 3+)
+streamlit>=1.30     # interactive dashboard (Phase 7)
+plotly>=5.18        # charts in the dashboard
+scipy>=1.11         # stats helpers
+pytest>=7.4         # tests / smoke checks

@@ -1,0 +1,605 @@
+# ============================================================================
+# Synthetic GP Surgery Simulator -- master configuration
+# Loosely modelled on a representative North West London / Harrow practice
+# ("Ridgway Surgery, North Harrow"). ALL DATA IS SYNTHETIC. Every figure below
+# is a published NHS/ONS-style ANCHOR or a clearly-labelled ASSUMPTION, not a
+# real practice record. Edit freely -- nothing is hard-coded in the modules.
+#
+# Convention: each non-obvious number carries a "# source:" or "# ASSUMPTION:"
+# comment so the model stays auditable.
+# ============================================================================
+
+# Global random seed -> same seed reproduces the same run end to end.
+seed: 42
+
+# ----------------------------------------------------------------------------
+# PHASE 1 -- SYNTHETIC POPULATION
+# ----------------------------------------------------------------------------
+population:
+
+  # Registered list size. English average list size per practice is ~9,000+
+  # and rising. source: NHS Digital, "Patients Registered at a GP Practice".
+  list_size: 15000         # adjustable 6,000-15,000 in the dashboard (large practice)
+
+  # Canonical age bands used everywhere (pyramid + condition gradients).
+  age_bands: ["0-4", "5-15", "16-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", "85+"]
+
+  # Age/sex pyramid. share = fraction of the list in that band;
+  # male_frac = fraction of that band who are male.
+  # male_frac source: ONS Census 2021, Harrow sex ratios by age.
+  # share: ASSUMPTION -- an "older list" profile (over-65 share ~27%, vs ~15%
+  # in the raw Harrow 2021 census), chosen to model an ageing suburban practice
+  # with a heavier chronic-disease burden. Median age lands ~46. Edit these to
+  # restore the true Harrow pyramid or shape any other list. Normalised in code.
+  age_sex_distribution:
+    "0-4":   {share: 0.045, male_frac: 0.512}
+    "5-15":  {share: 0.100, male_frac: 0.512}
+    "16-24": {share: 0.075, male_frac: 0.508}
+    "25-34": {share: 0.095, male_frac: 0.495}
+    "35-44": {share: 0.110, male_frac: 0.487}
+    "45-54": {share: 0.140, male_frac: 0.482}
+    "55-64": {share: 0.155, male_frac: 0.476}
+    "65-74": {share: 0.135, male_frac: 0.466}
+    "75-84": {share: 0.090, male_frac: 0.435}
+    "85+":   {share: 0.045, male_frac: 0.360}
+
+  # Calibration reference. The QOF target_prevalence figures are England *crude*
+  # rates; we interpret them as the crude prevalence of THIS baseline profile
+  # (the true Harrow 2021 age structure). Disease per-stratum rates are
+  # calibrated here, then applied to the actual list above -- so an older list
+  # correctly shows HIGHER crude prevalence/multimorbidity/frailty and a younger
+  # list lower, instead of every list being forced to the same crude rate.
+  # Leave this as the true Harrow pyramid; change the list shape above instead.
+  # source: ONS Census 2021, Harrow age structure.
+  calibration_reference:
+    size: 20000            # reference sample size (calibration precision)
+    age_sex_distribution:
+      "0-4":   {share: 0.058, male_frac: 0.512}
+      "5-15":  {share: 0.135, male_frac: 0.512}
+      "16-24": {share: 0.105, male_frac: 0.508}
+      "25-34": {share: 0.135, male_frac: 0.495}
+      "35-44": {share: 0.145, male_frac: 0.487}
+      "45-54": {share: 0.140, male_frac: 0.482}
+      "55-64": {share: 0.115, male_frac: 0.476}
+      "65-74": {share: 0.080, male_frac: 0.466}
+      "75-84": {share: 0.050, male_frac: 0.435}
+      "85+":   {share: 0.022, male_frac: 0.360}
+
+  # Ethnicity profile. Harrow is one of England's most diverse boroughs, with a
+  # large Indian / South Asian community. Shares normalised in code.
+  # source: ONS Census 2021, Harrow ethnic group.
+  ethnicity_distribution:
+    "Indian":          0.262
+    "Other Asian":     0.066
+    "Pakistani":       0.027
+    "Bangladeshi":     0.008
+    "White British":   0.222
+    "White Other":     0.135
+    "Black African":   0.045
+    "Black Caribbean": 0.025
+    "Mixed":           0.040
+    "Other":           0.170
+
+  # Grouping used to apply local epidemiology (e.g. elevated T2DM/IHD risk).
+  # source: clinical literature on South Asian cardiometabolic risk.
+  south_asian_groups: ["Indian", "Pakistani", "Bangladeshi", "Other Asian"]
+  black_groups: ["Black African", "Black Caribbean"]
+
+  # Index of Multiple Deprivation decile (1 = most deprived, 10 = least).
+  # Harrow is relatively less deprived, skewed toward mid/upper deciles.
+  # source: MHCLG English Indices of Deprivation 2019 (Harrow LSOA profile).
+  imd_decile_distribution: [0.04, 0.06, 0.08, 0.12, 0.14, 0.15, 0.14, 0.12, 0.09, 0.06]
+
+  # --------------------------------------------------------------------------
+  # Disease registers.
+  #
+  # target_prevalence is the WHOLE-LIST prevalence the generator calibrates to
+  # (it solves for a scale factor so the realised mean matches the target).
+  # The *_multipliers are RELATIVE risks -- only their ratios matter, because
+  # the absolute level is set by the calibration step. This lets you steepen an
+  # age gradient or an ethnic disparity without breaking the headline rate.
+  #
+  # target_prevalence anchors: QOF 2022/23 disease registers (England).
+  # NOTE/ASSUMPTION: QOF registers have condition-specific age denominators
+  # (e.g. depression/CKD are 18+); here we treat them as whole-list rates and
+  # let the age gradient do the work. Good enough for an illustrative model.
+  # --------------------------------------------------------------------------
+
+  # Order matters: "driver" conditions are sampled first; "dependent" ones may
+  # reference already-sampled conditions via comorbidity_multipliers, which is
+  # how multimorbidity becomes correlated rather than independent.
+  condition_sampling_order:
+    - hypertension
+    - diabetes
+    - asthma
+    - copd
+    - depression
+    - smi
+    - cancer
+    - osteoporosis
+    - learning_disability
+    - ihd
+    - heart_failure
+    - atrial_fibrillation
+    - stroke_tia
+    - ckd
+    - dementia
+
+  conditions:
+
+    hypertension:
+      label: "Hypertension"
+      target_prevalence: 0.140        # source: QOF 2022/23 HYP register ~14%
+      age_multipliers: {"0-4": 0.005, "5-15": 0.01, "16-24": 0.03, "25-34": 0.10, "35-44": 0.30, "45-54": 0.70, "55-64": 1.40, "65-74": 2.40, "75-84": 3.20, "85+": 3.60}
+      sex_multipliers: {male: 1.05, female: 0.95}
+      ethnicity_multipliers: {south_asian: 1.10, black: 1.40, default: 1.0}  # source: higher HTN in Black groups
+      deprivation_rr: 1.20            # most- vs least-deprived relative risk
+
+    diabetes:
+      label: "Type 2 diabetes"
+      target_prevalence: 0.075        # source: QOF 2022/23 DM register ~7.5%
+      age_multipliers: {"0-4": 0.002, "5-15": 0.02, "16-24": 0.06, "25-34": 0.20, "35-44": 0.50, "45-54": 1.00, "55-64": 1.70, "65-74": 2.30, "75-84": 2.60, "85+": 2.40}
+      sex_multipliers: {male: 1.20, female: 0.80}
+      ethnicity_multipliers: {south_asian: 2.70, black: 2.00, default: 1.0}  # source: ~2-4x T2DM risk in South Asians
+      deprivation_rr: 1.60
+
+    asthma:
+      label: "Asthma"
+      target_prevalence: 0.065        # source: QOF 2022/23 AST register ~6.5%
+      age_multipliers: {"0-4": 0.60, "5-15": 1.40, "16-24": 1.20, "25-34": 1.00, "35-44": 1.00, "45-54": 1.00, "55-64": 1.00, "65-74": 0.90, "75-84": 0.80, "85+": 0.70}
+      sex_multipliers: {male: 1.0, female: 1.0}
+      deprivation_rr: 1.30
+
+    copd:
+      label: "COPD"
+      target_prevalence: 0.019        # source: QOF 2022/23 COPD register ~1.9%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.01, "25-34": 0.05, "35-44": 0.15, "45-54": 0.60, "55-64": 1.40, "65-74": 2.60, "75-84": 3.40, "85+": 3.60}
+      sex_multipliers: {male: 1.10, female: 0.90}
+      deprivation_rr: 2.00            # source: strong deprivation gradient in COPD
+
+    depression:
+      label: "Depression"
+      target_prevalence: 0.130        # source: QOF 2022/23 DEP register (18+) ~13%
+      age_multipliers: {"0-4": 0.01, "5-15": 0.10, "16-24": 0.80, "25-34": 1.20, "35-44": 1.30, "45-54": 1.30, "55-64": 1.10, "65-74": 0.90, "75-84": 0.80, "85+": 0.70}
+      sex_multipliers: {male: 0.65, female: 1.35}
+      deprivation_rr: 1.60
+
+    smi:
+      label: "Serious mental illness"
+      target_prevalence: 0.010        # source: QOF 2022/23 MH register ~1%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.05, "16-24": 0.80, "25-34": 1.40, "35-44": 1.40, "45-54": 1.20, "55-64": 1.00, "65-74": 0.80, "75-84": 0.70, "85+": 0.60}
+      sex_multipliers: {male: 1.10, female: 0.90}
+      deprivation_rr: 2.00
+
+    cancer:
+      label: "Cancer"
+      target_prevalence: 0.035        # source: QOF 2022/23 CAN register (cumulative dx) ~3.5%
+      age_multipliers: {"0-4": 0.02, "5-15": 0.02, "16-24": 0.05, "25-34": 0.15, "35-44": 0.40, "45-54": 0.90, "55-64": 1.80, "65-74": 3.00, "75-84": 3.80, "85+": 4.00}
+      sex_multipliers: {male: 1.0, female: 1.0}
+
+    osteoporosis:
+      label: "Osteoporosis"
+      target_prevalence: 0.008        # source: QOF 2022/23 OST register ~0.8% (under-recorded vs true burden)
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.0, "25-34": 0.02, "35-44": 0.08, "45-54": 0.40, "55-64": 1.20, "65-74": 2.40, "75-84": 3.40, "85+": 3.80}
+      sex_multipliers: {male: 0.25, female: 1.75}
+
+    learning_disability:
+      label: "Learning disability"
+      target_prevalence: 0.005        # source: QOF 2022/23 LD register ~0.5%
+      age_multipliers: {"0-4": 0.30, "5-15": 1.40, "16-24": 1.50, "25-34": 1.20, "35-44": 1.00, "45-54": 0.90, "55-64": 0.70, "65-74": 0.50, "75-84": 0.40, "85+": 0.30}
+      sex_multipliers: {male: 1.30, female: 0.70}
+
+    ihd:
+      label: "CHD / IHD"
+      target_prevalence: 0.030        # source: QOF 2022/23 CHD register ~3%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.01, "25-34": 0.05, "35-44": 0.15, "45-54": 0.50, "55-64": 1.40, "65-74": 2.60, "75-84": 3.40, "85+": 3.60}
+      sex_multipliers: {male: 1.60, female: 0.60}
+      ethnicity_multipliers: {south_asian: 1.60, black: 0.80, default: 1.0}  # source: elevated IHD in South Asians
+      deprivation_rr: 1.40
+      comorbidity_multipliers: {diabetes: 1.90, hypertension: 1.60}
+
+    heart_failure:
+      label: "Heart failure"
+      target_prevalence: 0.010        # source: QOF 2022/23 HF register ~1%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.0, "25-34": 0.02, "35-44": 0.08, "45-54": 0.30, "55-64": 1.00, "65-74": 2.40, "75-84": 3.60, "85+": 4.20}
+      sex_multipliers: {male: 1.20, female: 0.80}
+      comorbidity_multipliers: {ihd: 3.00, hypertension: 1.70, diabetes: 1.40}
+
+    atrial_fibrillation:
+      label: "Atrial fibrillation"
+      target_prevalence: 0.020        # source: QOF 2022/23 AF register ~2%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.0, "25-34": 0.01, "35-44": 0.05, "45-54": 0.20, "55-64": 1.00, "65-74": 2.60, "75-84": 4.00, "85+": 4.80}
+      sex_multipliers: {male: 1.30, female: 0.70}
+      comorbidity_multipliers: {heart_failure: 2.50, ihd: 1.60, hypertension: 1.40}
+
+    stroke_tia:
+      label: "Stroke / TIA"
+      target_prevalence: 0.018        # source: QOF 2022/23 STIA register ~1.8%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.01, "25-34": 0.03, "35-44": 0.10, "45-54": 0.40, "55-64": 1.00, "65-74": 2.20, "75-84": 3.40, "85+": 4.00}
+      sex_multipliers: {male: 1.15, female: 0.85}
+      ethnicity_multipliers: {south_asian: 1.10, black: 1.40, default: 1.0}
+      comorbidity_multipliers: {atrial_fibrillation: 2.30, hypertension: 1.80, ihd: 1.60, diabetes: 1.30}
+
+    ckd:
+      label: "CKD (stage 3-5)"
+      target_prevalence: 0.040        # source: QOF 2022/23 CKD register (18+) ~4%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.01, "25-34": 0.03, "35-44": 0.10, "45-54": 0.40, "55-64": 1.00, "65-74": 2.40, "75-84": 4.00, "85+": 5.00}
+      sex_multipliers: {male: 1.0, female: 1.0}
+      comorbidity_multipliers: {diabetes: 2.20, hypertension: 1.90}
+
+    dementia:
+      label: "Dementia"
+      target_prevalence: 0.008        # source: QOF 2022/23 DEM register ~0.8%
+      age_multipliers: {"0-4": 0.0, "5-15": 0.0, "16-24": 0.0, "25-34": 0.0, "35-44": 0.0, "45-54": 0.02, "55-64": 0.10, "65-74": 0.50, "75-84": 2.50, "85+": 6.00}
+      sex_multipliers: {male: 0.85, female: 1.15}
+      comorbidity_multipliers: {stroke_tia: 2.00}
+
+  # --------------------------------------------------------------------------
+  # Frailty (derived for older patients). Simple electronic-Frailty-Index-style
+  # deficit accumulation. source: concept after Clegg et al. eFI (2016).
+  # --------------------------------------------------------------------------
+  frailty:
+    min_age: 65
+    base_index: 0.03
+    index_per_condition: 0.045
+    index_per_year_over_min: 0.004
+    # eFI category thresholds. source: Clegg et al. eFI cut-points.
+    categories: {fit: 0.12, mild: 0.24, moderate: 0.36}   # >moderate => severe
+    frail_flag_from: "moderate"   # moderate or severe count as "frail"
+
+  # --------------------------------------------------------------------------
+  # Derived behavioural attributes consumed by the Phase-2 demand model.
+  # --------------------------------------------------------------------------
+  behaviour:
+    # Relative annual consultation propensity by age (U-shaped: high in infancy
+    # and old age, low in healthy working age). Normalised to list-mean 1.0.
+    # source: pattern after NHS Digital appointment rates by age band.
+    age_consultation_propensity: {"0-4": 1.60, "5-15": 0.70, "16-24": 0.80, "25-34": 0.95, "35-44": 0.95, "45-54": 1.05, "55-64": 1.25, "65-74": 1.60, "75-84": 2.10, "85+": 2.50}
+    condition_propensity_increment: 0.18   # ASSUMPTION: each LTC adds ~18% demand
+    deprivation_propensity_rr: 1.25        # most- vs least-deprived
+    propensity_lognormal_sigma: 0.35       # ASSUMPTION: individual variability
+
+    # Continuity preference (0 = doesn't mind who they see, 1 = strongly wants
+    # their usual clinician). Older / multimorbid patients value it more.
+    # source: pattern after GP Patient Survey continuity items + continuity
+    # literature (high-need patients benefit most).
+    continuity_age_base: {"0-4": 0.25, "5-15": 0.20, "16-24": 0.20, "25-34": 0.30, "35-44": 0.35, "45-54": 0.40, "55-64": 0.50, "65-74": 0.60, "75-84": 0.70, "85+": 0.75}
+    continuity_condition_increment: 0.05
+    continuity_dementia_boost: 0.20
+    continuity_smi_boost: 0.15
+    continuity_frailty_boost: 0.15
+    continuity_noise_sd: 0.12
+
+# ----------------------------------------------------------------------------
+# Validation tolerances (used by scripts/validate_population.py).
+# ----------------------------------------------------------------------------
+validation:
+  prevalence_abs_tol: 0.02      # pass if |realised - target| <= 2 percentage points...
+  prevalence_rel_tol: 0.20      # ...OR within 20% relative (whichever is looser)
+  # Multimorbidity sanity checks (soft -- warn but don't fail).
+  # source: Barnett et al. Lancet 2012; ~1 in 4 adults have 2+ LTCs.
+  multimorbidity:
+    adult_2plus: {target: 0.27, tol: 0.12}
+    adult_3plus: {target: 0.14, tol: 0.10}
+  # Local-epidemiology checks: South Asian vs rest prevalence ratio.
+  south_asian_diabetes_min_ratio: 1.6
+  south_asian_ihd_min_ratio: 1.2
+
+# ----------------------------------------------------------------------------
+# PHASE 2 -- DEMAND MODEL
+# Turns the list into a year-long stream of contacts (demand events).
+# ----------------------------------------------------------------------------
+demand:
+
+  # Calendar the simulated year is aligned to (weekday/season/bank-holiday).
+  sim_year: 2025          # 2025-01-01 is a Wednesday; non-leap (365 days)
+
+  # Average patient-facing contacts per registered patient per year. NHS Digital
+  # "Appointments in General Practice" implies roughly 5-6 appointments per
+  # patient per year. source: NHS Digital, Appointments in General Practice.
+  contacts_per_patient_per_year: 5.5
+
+  # A practice-wide demand multiplier (the dashboard exposes this as a slider;
+  # scenarios also scale it). 1.0 = baseline.
+  demand_multiplier: 1.0
+
+  # Monthly seasonality (Jan..Dec). Winter higher (respiratory illness), late
+  # summer lower. source: pattern after RCGP RSC / seasonal GP attendance.
+  month_multipliers: [1.18, 1.12, 1.08, 1.00, 0.95, 0.90, 0.88, 0.85, 0.95, 1.05, 1.12, 1.12]
+
+  # Day-of-week multipliers (Mon..Sun). Monday peak; weekends ~closed (residual
+  # is online/extended-access). source: NHS Digital appointments by weekday.
+  weekday_multipliers: [1.35, 1.05, 1.00, 1.00, 0.95, 0.06, 0.02]
+
+  # England & Wales bank holidays for the sim year [month, day]. Practice
+  # effectively closed; demand rebounds on the next working day.
+  # source: GOV.UK bank holidays (England & Wales), illustrative set.
+  bank_holidays: [[1, 1], [4, 18], [4, 21], [5, 5], [5, 26], [8, 25], [12, 25], [12, 26]]
+  bank_holiday_multiplier: 0.03     # ~closed on the day
+  post_holiday_surge: 1.5           # next-working-day rebound
+
+  # Intra-day arrival profile, hour 0..23 (weights, normalised in code). The 8am
+  # rush dominates as the phone line / online booking opens; small evening
+  # online tail. source: ASSUMPTION after the well-known 8am surge.
+  hour_weights: [0, 0, 0, 0, 0, 0, 0, 0.20, 1.00, 0.60, 0.45, 0.40, 0.38, 0.40, 0.42, 0.38, 0.32, 0.22, 0.12, 0.06, 0.03, 0.01, 0, 0]
+
+  # Contact TYPE mix. `base` weights sum to ~1; per-patient adjustments add
+  # chronic reviews for the multimorbid and mental-health contacts for patients
+  # on the depression/SMI registers. source: ASSUMPTION informed by primary-care
+  # workload-mix studies (Health Foundation / Nuffield Trust).
+  contact_types:
+    acute_minor:    {base: 0.35}                          # acute, self-limiting
+    acute_serious:  {base: 0.07}                          # acute, potentially serious
+    chronic_review: {base: 0.05, per_condition: 0.07}     # scales with multimorbidity
+    mental_health:  {base: 0.06, depression_smi_boost: 0.12}
+    admin:          {base: 0.22}                          # results / meds / letters
+    self_care:      {base: 0.25}                          # "could be managed elsewhere"
+
+  # CHANNEL mix by age group (older -> less online, more phone/walk-in).
+  # Normalised per contact. source: ASSUMPTION after GP Patient Survey access data.
+  channels_by_age:
+    under_40:  {phone: 0.45, online: 0.42, walk_in: 0.13}
+    age_40_64: {phone: 0.55, online: 0.28, walk_in: 0.17}
+    age_65_plus: {phone: 0.68, online: 0.08, walk_in: 0.24}
+
+  # Perceived URGENCY by contact type (each row sums to 1).
+  # source: ASSUMPTION; urgency is what is *requested*, may differ from acuity.
+  urgency_by_type:
+    acute_minor:    {emergency: 0.01, urgent: 0.35, routine: 0.64}
+    acute_serious:  {emergency: 0.12, urgent: 0.63, routine: 0.25}
+    chronic_review: {emergency: 0.00, urgent: 0.05, routine: 0.95}
+    mental_health:  {emergency: 0.02, urgent: 0.25, routine: 0.73}
+    admin:          {emergency: 0.00, urgent: 0.03, routine: 0.97}
+    self_care:      {emergency: 0.00, urgent: 0.15, routine: 0.85}
+
+  # TRUE acuity by contact type (the ground truth used for safety metrics; each
+  # row sums to 1). Note acute_minor occasionally hides high acuity, and
+  # self_care rarely does -- this is what makes under-triage measurable later.
+  # source: ASSUMPTION for an illustrative safety model.
+  acuity_by_type:
+    acute_minor:    {low: 0.70, moderate: 0.25, high: 0.045, emergency: 0.005}
+    acute_serious:  {low: 0.10, moderate: 0.40, high: 0.40,  emergency: 0.10}
+    chronic_review: {low: 0.55, moderate: 0.38, high: 0.07,  emergency: 0.00}
+    mental_health:  {low: 0.45, moderate: 0.40, high: 0.13,  emergency: 0.02}
+    admin:          {low: 0.95, moderate: 0.05, high: 0.00,  emergency: 0.00}
+    self_care:      {low: 0.93, moderate: 0.07, high: 0.00,  emergency: 0.00}
+
+# ----------------------------------------------------------------------------
+# PHASE 3 -- PRACTICE / SUPPLY MODEL
+# The staff roster and appointment book. Clinicians are resources; contacts
+# request them. Same-day access is simulated as a queue (SimPy); routine demand
+# is booked forward against finite daily capacity.
+# ----------------------------------------------------------------------------
+practice:
+
+  open_hour: 8.0            # clinic opens (drives the intra-day same-day queue)
+  close_hour: 18.5         # clinic closes
+  dna_rate: 0.04           # no-shows. source: NHS Digital appointments DNA ~4%
+  urgent_reserved_fraction: 0.30   # of urgent-capable capacity held for same-day
+  max_routine_wait_days: 28        # routine request gives up after this -> unmet. ASSUMPTION
+  enforce_safe_limits: false       # optional BMA-style cap on contacts/clinician/day
+
+  # Staff roster. Each role: how many clinicians, daily slots each, appointment
+  # length, whether they take same-day urgent work, a BMA-style safe daily
+  # contact limit, and a scope-of-practice (which contact types they can handle).
+  # source: ASSUMPTION -- a plausible roster for a ~15k list; edit freely.
+  #   slots_per_day ~ sessions/day x slots/session (a session ~ a half-day).
+  #   safe_daily_contacts ~ BMA "safe working in general practice" (~25/day GP).
+  roles:
+    gp_partner:
+      clinicians: 4
+      slots_per_day: 22
+      appt_minutes: 11
+      urgent_capable: true
+      safe_daily_contacts: 28
+      scope: [acute_minor, acute_serious, chronic_review, mental_health, admin, self_care]
+    salaried_gp:
+      clinicians: 2
+      slots_per_day: 22
+      appt_minutes: 11
+      urgent_capable: true
+      safe_daily_contacts: 28
+      scope: [acute_minor, acute_serious, chronic_review, mental_health, admin, self_care]
+    locum_gp:
+      clinicians: 1
+      slots_per_day: 14
+      appt_minutes: 12
+      urgent_capable: true
+      safe_daily_contacts: 28
+      scope: [acute_minor, acute_serious, chronic_review, mental_health, admin]
+    anp:                       # advanced nurse / clinical practitioner
+      clinicians: 2
+      slots_per_day: 20
+      appt_minutes: 13
+      urgent_capable: true
+      safe_daily_contacts: 24
+      scope: [acute_minor, acute_serious, chronic_review, mental_health]
+    practice_nurse:
+      clinicians: 3
+      slots_per_day: 20
+      appt_minutes: 15
+      urgent_capable: false
+      safe_daily_contacts: 30
+      scope: [chronic_review, admin]
+    hca:                       # healthcare assistant
+      clinicians: 2
+      slots_per_day: 22
+      appt_minutes: 12
+      urgent_capable: false
+      safe_daily_contacts: 36
+      scope: [admin, chronic_review]
+    clinical_pharmacist:
+      clinicians: 1
+      slots_per_day: 18
+      appt_minutes: 14
+      urgent_capable: false
+      safe_daily_contacts: 26
+      scope: [chronic_review, admin, acute_minor]
+    fcp_physio:                # first-contact physiotherapist
+      clinicians: 1
+      slots_per_day: 12
+      appt_minutes: 18
+      urgent_capable: false
+      safe_daily_contacts: 20
+      scope: [acute_minor]
+    paramedic:
+      clinicians: 1
+      slots_per_day: 14
+      appt_minutes: 16
+      urgent_capable: true
+      safe_daily_contacts: 22
+      scope: [acute_minor, acute_serious]
+    care_navigator:            # reception / care navigation (also the triage hub)
+      clinicians: 3
+      slots_per_day: 34
+      appt_minutes: 6
+      urgent_capable: false
+      safe_daily_contacts: 60
+      scope: [admin, self_care]
+    social_prescriber:
+      clinicians: 1
+      slots_per_day: 8
+      appt_minutes: 25
+      urgent_capable: false
+      safe_daily_contacts: 12
+      scope: [self_care, mental_health]
+    mental_health_practitioner:
+      clinicians: 1
+      slots_per_day: 12
+      appt_minutes: 20
+      urgent_capable: true
+      safe_daily_contacts: 16
+      scope: [mental_health]
+
+  # Routing preference (ordered) by contact type. "gp" expands to the three GP
+  # roles. Traditional/direct-booking is GP-weighted (patients book the doctor);
+  # Phase 4 total triage uses the better-matched routing below to divert work to
+  # the most appropriate professional. source: ASSUMPTION (modern general practice).
+  routing_traditional:
+    acute_minor:    [gp, anp]
+    acute_serious:  [gp, anp, paramedic]
+    chronic_review: [practice_nurse, gp, clinical_pharmacist]
+    mental_health:  [gp, mental_health_practitioner]
+    admin:          [care_navigator, hca, gp]
+    self_care:      [care_navigator, gp]
+  routing_triage:
+    acute_minor:    [fcp_physio, clinical_pharmacist, anp, paramedic, gp]
+    acute_serious:  [gp, anp, paramedic]
+    chronic_review: [practice_nurse, clinical_pharmacist, anp, gp]
+    mental_health:  [mental_health_practitioner, social_prescriber, anp, gp]
+    admin:          [care_navigator, hca, clinical_pharmacist]
+    self_care:      [care_navigator, social_prescriber]
+
+# ----------------------------------------------------------------------------
+# PHASE 4 -- TRIAGE, AI LEVERS & CONTINUITY  (the heart of the model)
+# ----------------------------------------------------------------------------
+
+# The interactive levers (the dashboard's sidebar controls). These are the
+# *settings*; their tunable *effects* are in the sections below.
+levers:
+  triage_model: traditional        # traditional | total_triage
+  ai_scribe_adoption: 0.0          # 0-1  ambient scribe (admin time saved -> throughput)
+  ai_triage_adoption: 0.0          # 0-1  AI does/assists initial triage
+  ai_triage_accuracy: 0.92         # 0-1  routing accuracy of AI triage (the safety knob)
+  ai_admin_adoption: 0.0           # 0-1  AI letters/coding/results handling
+  continuity_policy_strength: 0.5  # 0-1  how hard the practice tries for usual-clinician
+
+# Total-triage mechanics: every contact is assessed first (consuming triager
+# time) then routed -- to the right clinician, or diverted (pharmacy/self-care/
+# signposting). source: ASSUMPTION after "Modern General Practice" / total triage.
+triage:
+  triage_minutes_navigator: 3.0    # a care-navigator triage assessment
+  triage_minutes_clinical: 2.5     # a duty-GP triage assessment (clinical)
+  duty_gp_triage_share: 0.25       # fraction of triage that needs a clinician
+  human_triage_accuracy: 0.97      # humans rarely mis-triage
+  # Online (eConsult-style) contacts are self-triaged via the form -> they cost
+  # no human triage time, though the triage decision (route/divert) still applies.
+  online_self_triage: true
+  # fraction of each type that correct triage diverts (signpost / pharmacy / self-care)
+  diversion_fraction:
+    self_care: 0.70
+    admin: 0.30
+    acute_minor: 0.15
+    mental_health: 0.05
+    chronic_review: 0.05
+    acute_serious: 0.0
+
+# How each AI lever converts adoption into an effect. source: ASSUMPTION,
+# deliberately tunable -- these are the numbers to argue about.
+ai_effects:
+  scribe_throughput_gain_at_full: 0.12     # +12% effective clinical slots at 100%
+  scribe_roles: [gp_partner, salaried_gp, locum_gp, anp, paramedic, clinical_pharmacist, mental_health_practitioner]
+  admin_autoresolve_at_full: 0.45          # share of admin contacts AI fully handles
+  admin_clinician_time_saved_at_full: 0.08 # extra clinical slot gain from less admin
+  triage_human_offload_at_full: 0.85       # share of triage AI takes off humans at 100%
+
+# Continuity: which contacts seek/benefit from seeing the usual clinician, and
+# who counts as "high-need". source: continuity literature (high-need patients
+# benefit most); GP Patient Survey continuity items.
+continuity:
+  type_weight:
+    chronic_review: 1.00
+    mental_health:  0.80
+    acute_serious:  0.30
+    acute_minor:    0.25
+    admin:          0.10
+    self_care:      0.00
+  high_need_min_conditions: 3
+  usual_clinician_roles: [gp_partner, salaried_gp]   # who can be a "usual GP"
+
+# ----------------------------------------------------------------------------
+# PHASE 5 -- COSTING (a light cost-style proxy for the efficiency metrics)
+# ----------------------------------------------------------------------------
+costing:
+  # Indicative unit cost (GBP) per delivered contact by role. source: ASSUMPTION
+  # informed by PSSRU "Unit Costs of Health & Social Care" -- illustrative only.
+  cost_per_contact:
+    gp_partner: 56
+    salaried_gp: 56
+    locum_gp: 90
+    anp: 38
+    practice_nurse: 26
+    hca: 14
+    clinical_pharmacist: 34
+    fcp_physio: 38
+    paramedic: 40
+    care_navigator: 6
+    social_prescriber: 22
+    mental_health_practitioner: 44
+  escalation_cost: 80        # proxy cost when a contact escalates to 111/A&E
+  diverted_cost: 8           # proxy cost of a triage/signpost interaction
+
+# ----------------------------------------------------------------------------
+# PHASE 6 -- STRESS SCENARIOS
+# Named, toggleable modifiers on demand and/or supply. Each is applied on top of
+# the baseline config; the dashboard shows before/after on the same KPIs.
+# source: ASSUMPTION -- illustrative shock sizes, all tunable.
+# ----------------------------------------------------------------------------
+scenarios:
+  winter_surge:
+    description: "Winter respiratory/flu surge: higher winter demand + staff sickness"
+    demand_multiplier: 1.08          # year-round bump (a bad winter drags the average)
+    winter_month_extra: 1.30         # extra multiplier on Dec/Jan/Feb
+    staff_slot_factor: 0.92          # clinicians lose ~8% of slots to sickness
+  pandemic_spike:
+    description: "Pandemic-style spike: sharp demand rise + shift to remote channels"
+    demand_multiplier: 1.30
+    online_shift: 0.20               # weight moved out of walk-in into online/phone
+  gp_vacancy:
+    description: "GP vacancy: lose one salaried GP"
+    remove_clinicians: {salaried_gp: 1}
+  staff_shortage:
+    description: "Staff sickness: lose a GP, a nurse and a navigator"
+    remove_clinicians: {salaried_gp: 1, practice_nurse: 1, care_navigator: 1}
+  monday_pileup:
+    description: "Monday / post-bank-holiday pile-up amplified"
+    monday_extra: 1.25
+    post_holiday_extra: 1.30
+  list_growth:
+    description: "List growth + demand inflation (year-on-year creep)"
+    list_size_factor: 1.12
+    demand_multiplier: 1.05
+
+# ----------------------------------------------------------------------------
+# Later phase (dashboard) will add its own section.
+# ----------------------------------------------------------------------------
